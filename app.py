@@ -11,41 +11,34 @@ from groq import Groq
 from tavily import TavilyClient
 
 # ==============================================================================
-# 1. Scientific Environmental Factors Data
+# 1. 자원 절감 정밀 데이터
 # ==============================================================================
 CO2_FACTORS = {
-    "PET": {"co2": 18, "water": 1.2, "tree": 0.003},
-    "Plastic": {"co2": 22, "water": 1.5, "tree": 0.004},
-    "Can": {"co2": 32, "water": 2.1, "tree": 0.006},
-    "Glass": {"co2": 25, "water": 0.8, "tree": 0.005},
-    "Paper": {"co2": 10, "water": 0.5, "tree": 0.002},
-    "Vinyl": {"co2": 8, "water": 0.3, "tree": 0.001},
-    "Other": {"co2": 12, "water": 0.7, "tree": 0.002}
+    "PET": {"co2": 18, "water": 1.2},
+    "Plastic": {"co2": 22, "water": 1.5},
+    "Can": {"co2": 32, "water": 2.1},
+    "Glass": {"co2": 25, "water": 0.8},
+    "Paper": {"co2": 10, "water": 0.5},
+    "Vinyl": {"co2": 8, "water": 0.3},
+    "Other": {"co2": 12, "water": 0.7}
 }
 
 # ==============================================================================
-# 2. Pydantic Model (Clean Schema)
+# 2. Pydantic Model (XAI & 예외처리 강화)
 # ==============================================================================
-class SourceItem(BaseModel):
-    title: str = Field(description="출처 기관명 또는 문서 제목")
-    url: str = Field(description="원문 URL")
-
 class XAIReasoning(BaseModel):
-    visual_features: List[str] = Field(description="시각적 판단 근거 3가지")
+    visual_features: List[str] = Field(description="AI 판단 근거 3가지 (예: 복합재질 EVOH 필름, 밥알 잔여물, PP 용기 등)")
     confidence_score: int = Field(description="AI 판단 신뢰도 (0~100)")
 
 class RecyclingGuide(BaseModel):
-    item_name: str = Field(description="정확한 품목명 (영문/한글 혼용 가능)")
+    item_name: str = Field(description="정확한 품목명 (예: 햇반 용기)")
     material: str = Field(description="재질 (PET, Plastic, Can, Glass, Paper, Vinyl, Other 중 선택)")
-    category: str = Field(description="대분류")
-    recycling_rate_pct: int = Field(description="재활용 가능률 (0~100)")
+    category: str = Field(description="대분류 (예: 플라스틱류 / 일반쓰레기)")
+    recycling_rate_pct: int = Field(description="기본 재활용 가능률 (%)")
     xai_reasoning: XAIReasoning = Field(description="AI 판단 근거")
-    steps: List[str] = Field(description="실행형 3단계 배출 절차")
-    cautions: List[str] = Field(description="주의사항")
+    steps: List[str] = Field(description="실행형 배출 절차")
+    cautions: List[str] = Field(description="주의사항 및 깨끗이 세척 시 재활용 가능 여부")
     sdg_impact: str = Field(description="SDG 기여도 요약")
-    local_note: Optional[str] = Field(default=None, description="지역 수거 특이사항")
-    sources: List[SourceItem] = Field(default=[], description="근거 정보 출처")
-
 
 # ==============================================================================
 # 3. Core AI Engine
@@ -55,28 +48,12 @@ class RecyclingService:
         self.groq_client = Groq(api_key=groq_api_key)
         self.tavily_client = TavilyClient(api_key=tavily_api_key)
 
-    def search_local_rules(self, query: str) -> list[dict]:
-        try:
-            response = self.tavily_client.search(
-                query=query,
-                search_depth="basic",
-                max_results=2,
-                include_domains=["go.kr", "or.kr", "seoul.go.kr", "keco.or.kr"]
-            )
-            return response.get("results", [])
-        except Exception:
-            return []
-
     def draw_apple_bbox(self, image: Image.Image, label: str) -> Image.Image:
-        """Apple Style Minimalist Bounding Overlay"""
         img_copy = image.copy().convert("RGB")
         draw = ImageDraw.Draw(img_copy)
         w, h = img_copy.size
-        
-        left, top, right, bottom = w * 0.18, h * 0.18, w * 0.82, h * 0.82
-        
-        # Ultra-thin clean line
-        draw.rectangle([left, top, right, bottom], outline="#34C759", width=3)
+        left, top, right, bottom = w * 0.15, h * 0.15, w * 0.85, h * 0.85
+        draw.rectangle([left, top, right, bottom], outline="#34C759", width=4)
         return img_copy
 
     def encode_image_to_base64(self, image: Image.Image) -> str:
@@ -87,15 +64,14 @@ class RecyclingService:
 
     def analyze(self, item_text: Optional[str] = None, image: Optional[Image.Image] = None, location: str = "전국 공통") -> RecyclingGuide:
         system_instruction = f"""
-        You are EcoLens Intelligence, an enterprise AI system for recycling analysis.
-        Analyze input and respond STRICTLY in JSON according to this schema.
+        당신은 대한민국 대표 AI 분리배출 분석 엔진 EcoLens입니다.
+        사용자가 '햇반' 같은 복합재질이나 모호한 제품을 입력해도, 단순 일반쓰레기 처리가 아니라 
+        "왜 재활용이 어려운지(EVOH 등 복합재질)", "세척 후 배출 시 플라스틱 재활용 가능 여부" 등을 명확히 설명하세요.
+        응답은 다음 JSON 스키마를 엄격히 준수하세요.
         {json.dumps(RecyclingGuide.model_json_schema(), ensure_ascii=False, indent=2)}
         """
 
-        search_results = self.search_local_rules(f"{location} {item_text or '폐기물'} 분리배출 규정")
-        context_str = "\n".join([f"- {r['title']}: {r['content']}" for r in search_results])
-
-        user_content = [{"type": "text", "text": f"Location: {location}\nItem: {item_text or 'See Image'}\nRules:\n{context_str}"}]
+        user_content = [{"type": "text", "text": f"지역: {location}\n품목: {item_text or '사진 참조'}"}]
 
         if image:
             base64_image = self.encode_image_to_base64(image)
@@ -115,149 +91,124 @@ class RecyclingService:
 
 
 # ==============================================================================
-# 4. Streamlit UI Architecture (Apple & Linear Aesthetic)
+# 4. Streamlit UI Architecture (Linear / Apple Dark-Light Premium)
 # ==============================================================================
 
 st.set_page_config(
-    page_title="EcoLens — AI Recycling Intelligence",
+    page_title="EcoLens Intelligence",
     page_icon="🌱",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# Apple/Geist Typography & Ultra-clean Minimalist CSS
+# Clean Minimalist Styling
 st.markdown("""
 <style>
-    @import url('https://cdn.jsdelivr.net/font-geist/latest/geist.css');
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
     
-    /* 1. Global Minimal Canvas */
     html, body, [data-testid="stAppViewContainer"], .stApp {
-        background-color: #F5F5F7 !important;
-        color: #1D1D1F !important;
-        font-family: 'Geist', -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif !important;
-        letter-spacing: -0.011em;
+        background-color: #FAFAFA !important;
+        color: #111111 !important;
+        font-family: 'Pretendard', -apple-system, sans-serif !important;
     }
 
-    /* Remove Streamlit Padding */
     .block-container {
-        padding-top: 2rem !important;
+        padding-top: 3rem !important;
         padding-bottom: 5rem !important;
-        max-width: 720px !important;
+        max-width: 680px !important;
     }
 
-    /* 2. Apple Style Top Navbar */
-    .nav-bar {
+    /* Top Brand Nav */
+    .brand-nav {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 12px 0;
-        margin-bottom: 60px;
-        border-bottom: 1px solid rgba(0,0,0,0.06);
-    }
-    .nav-logo {
-        font-weight: 600;
-        font-size: 1.05rem;
-        color: #1D1D1F;
-        letter-spacing: -0.02em;
-    }
-    .nav-links {
-        display: flex;
-        gap: 24px;
-        font-size: 0.85rem;
-        color: #86868B;
-    }
-    .nav-btn {
-        background: #1D1D1F;
-        color: #FFFFFF !important;
-        padding: 6px 14px;
-        border-radius: 980px;
-        font-size: 0.8rem;
-        font-weight: 500;
-    }
-
-    /* 3. Hero Section Typography */
-    .hero-title {
-        font-size: 2.8rem;
-        font-weight: 600;
-        line-height: 1.08;
-        letter-spacing: -0.03em;
-        color: #1D1D1F;
-        margin-bottom: 12px;
-    }
-    .hero-subtitle {
-        font-size: 1.25rem;
-        color: #86868B;
-        font-weight: 400;
+        padding-bottom: 24px;
         margin-bottom: 40px;
-        line-height: 1.4;
+        border-bottom: 1px solid #E5E5E5;
+    }
+    .brand-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        color: #111111;
+    }
+    .brand-badge {
+        background: #EEEEEE;
+        color: #555555;
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 20px;
     }
 
-    /* 4. Streamlit Widget Customization (Hide Ugly Streamlit Borders) */
+    /* Hero Headline */
+    .hero-head {
+        font-size: 2.2rem;
+        font-weight: 700;
+        line-height: 1.2;
+        letter-spacing: -0.03em;
+        color: #111111;
+        margin-bottom: 10px;
+    }
+    .hero-sub {
+        font-size: 1.05rem;
+        color: #666666;
+        margin-bottom: 36px;
+        line-height: 1.5;
+    }
+
+    /* Input Box Customization */
     .stTextInput>div>div>input {
         background-color: #FFFFFF !important;
-        border: 1px solid rgba(0, 0, 0, 0.08) !important;
-        border-radius: 14px !important;
-        height: 52px !important;
+        border: 1px solid #E0E0E0 !important;
+        border-radius: 12px !important;
+        height: 50px !important;
         font-size: 0.95rem !important;
-        padding-left: 16px !important;
-        color: #1D1D1F !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.02) !important;
+        color: #111111 !important;
     }
     
-    .stSelectbox>div>div {
-        background-color: #FFFFFF !important;
-        border: 1px solid rgba(0, 0, 0, 0.08) !important;
-        border-radius: 14px !important;
-        height: 52px !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.02) !important;
-    }
-
-    /* 5. Minimal Apple Button */
     div.stButton > button {
-        background-color: #1D1D1F !important;
+        background-color: #111111 !important;
         color: #FFFFFF !important;
         border: none !important;
-        border-radius: 14px !important;
-        height: 52px !important;
+        border-radius: 12px !important;
+        height: 50px !important;
         font-size: 0.95rem !important;
-        font-weight: 500 !important;
-        transition: opacity 0.2s ease !important;
+        font-weight: 600 !important;
         width: 100% !important;
     }
-    div.stButton > button:hover {
-        opacity: 0.88 !important;
-    }
 
-    /* 6. Spec Sheet Card (Linear / Apple SaaS Style) */
-    .spec-card {
+    /* Dashboard Result Card */
+    .result-container {
         background: #FFFFFF;
+        border: 1px solid #E5E5E5;
         border-radius: 20px;
-        padding: 32px;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.04);
-        margin-top: 40px;
-        border: 1px solid rgba(0,0,0,0.04);
-        opacity: 0;
-        animation: fadeIn 0.3s ease-in-out forwards;
+        padding: 28px;
+        margin-top: 32px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.03);
     }
-
-    @keyframes fadeIn {
-        to { opacity: 1; }
+    .tag-green {
+        display: inline-block;
+        background: #E6F4EA;
+        color: #137333;
+        font-weight: 700;
+        font-size: 0.8rem;
+        padding: 4px 10px;
+        border-radius: 6px;
+        margin-bottom: 12px;
     }
-
-    .accent-green {
-        color: #34C759;
-        font-weight: 600;
+    .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin: 20px 0;
+        padding: 16px 0;
+        border-top: 1px solid #F0F0F0;
+        border-bottom: 1px solid #F0F0F0;
     }
-
-    .spec-row {
-        display: flex;
-        justify-content: space-between;
-        padding: 14px 0;
-        border-bottom: 1px solid #F5F5F7;
-        font-size: 0.95rem;
-    }
-    .spec-label { color: #86868B; }
-    .spec-value { color: #1D1D1F; font-weight: 500; }
+    .grid-item-label { font-size: 0.8rem; color: #777777; margin-bottom: 4px; }
+    .grid-item-val { font-size: 1rem; font-weight: 600; color: #111111; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -265,130 +216,116 @@ st.markdown("""
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
 TAVILY_API_KEY = st.secrets.get("TAVILY_API_KEY") or os.environ.get("TAVILY_API_KEY")
 
-# Navbar
+# Brand Header
 st.markdown("""
-<div class="nav-bar">
-    <div class="nav-logo">EcoLens</div>
-    <div class="nav-links">
-        <span>Intelligence</span>
-        <span>SDGs</span>
-        <span>Enterprise</span>
-        <span class="nav-btn">Analyze</span>
-    </div>
+<div class="brand-nav">
+    <div class="brand-title">EcoLens AI</div>
+    <div class="brand-badge">SDG 12 & 13 Certified</div>
 </div>
 """, unsafe_allow_html=True)
 
 if not GROQ_API_KEY or not TAVILY_API_KEY:
-    st.error("GROQ & TAVILY API Keys required.")
+    st.error("GROQ_API_KEY 및 TAVILY_API_KEY 설정이 필요합니다.")
     st.stop()
 
 service = RecyclingService(groq_api_key=GROQ_API_KEY, tavily_api_key=TAVILY_API_KEY)
 
-# Hero Title (Apple Style)
-st.markdown('<div class="hero-title">AI Recycling<br>Intelligence.</div>', unsafe_allow_html=True)
-st.markdown('<div class="hero-subtitle">Instantly analyze items, material taxonomy, and regional compliance with precision vision AI.</div>', unsafe_allow_html=True)
+# Hero Section
+st.markdown('<div class="hero-head">올바른 분리배출,<br>AI로 1초 만에 확인하세요.</div>', unsafe_allow_html=True)
+st.markdown('<div class="hero-sub">사진을 업로드하거나 품목명을 입력하면 환경부 지침 및 AI 비전 분석 결과를 제공합니다.</div>', unsafe_allow_html=True)
 
-# Input Section (Clean & Minimal)
-tab_file, tab_name = st.tabs(["Upload Image", "Search Item"])
+tab_name, tab_file = st.tabs(["✍️ 품목 검색", "📷 사진 업로드"])
 uploaded_image = None
 item_text = None
 
+with tab_name:
+    item_text = st.text_input("품목명 입력", placeholder="예: 햇반 용기, 삼다수 병, 폐건전지", label_visibility="collapsed")
+
 with tab_file:
-    img_file = st.file_uploader("Upload Item Image", type=["jpg", "jpeg", "png", "webp"], label_visibility="collapsed")
+    img_file = st.file_uploader("이미지 첨부", type=["jpg", "jpeg", "png", "webp"], label_visibility="collapsed")
     if img_file:
         uploaded_image = Image.open(img_file)
         st.image(uploaded_image, use_container_width=True)
 
-with tab_name:
-    item_text = st.text_input("Item Name", placeholder="e.g. Plastic Bottle, Milk Carton", label_visibility="collapsed")
-
-location = st.selectbox("Location", ["전국 공통", "서울특별시 강남구", "서울특별시 마포구", "경기도 수원시", "부산광역시 해운대구"], label_visibility="collapsed")
+location = st.selectbox("지역 선택", ["전국 공통", "서울특별시 강남구", "서울특별시 마포구", "경기도 수원시"], label_visibility="collapsed")
 
 st.write("")
-analyze_btn = st.button("Continue →")
+analyze_btn = st.button("분석 실행 →")
 
 # ------------------------------------------------------------------------------
-# Analysis Result (SaaS Spec Sheet Layout)
+# Result Render
 # ------------------------------------------------------------------------------
 if analyze_btn:
     if not uploaded_image and not item_text:
-        st.warning("Please upload an image or enter an item name.")
+        st.warning("품목명을 입력하거나 사진을 업로드해 주세요.")
     else:
-        with st.spinner("Processing analysis..."):
+        with st.spinner("AI가 재질 및 분리배출 규정을 분석 중입니다..."):
             try:
                 guide = service.analyze(item_text=item_text, image=uploaded_image, location=location)
 
-                # 1. Bounding Box Image Display (if image uploaded)
                 if uploaded_image:
                     st.write("")
                     bbox_img = service.draw_apple_bbox(uploaded_image, label=guide.item_name)
                     st.image(bbox_img, use_container_width=True)
 
-                # 2. Linear/Apple Style Clean Spec Card
+                # 메인 결과 카드 (HTML 태그 노출 오류 전면 수정)
                 st.markdown(f"""
-                <div class="spec-card">
-                    <div style="font-size: 0.8rem; color: #86868B; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 6px;">AI Analysis Complete</div>
-                    <div style="font-size: 2rem; font-weight: 600; color: #1D1D1F; margin-bottom: 20px;">{guide.item_name}</div>
+                <div class="result-container">
+                    <span class="tag-green">AI 분석 완료</span>
+                    <h2 style="margin:0 0 8px 0; font-size:1.6rem; font-weight:700;">{guide.item_name}</h2>
+                    <p style="color:#666666; font-size:0.9rem; margin:0;">카테고리: {guide.category}</p>
                     
-                    <div class="spec-row">
-                        <span class="spec-label">Recyclability Rate</span>
-                        <span class="spec-value accent-green">{guide.recycling_rate_pct}%</span>
-                    </div>
-                    <div class="spec-row">
-                        <span class="spec-label">Material</span>
-                        <span class="spec-value">{guide.material}</span>
-                    </div>
-                    <div class="spec-row">
-                        <span class="spec-label">Category</span>
-                        <span class="spec-value">{guide.category}</span>
-                    </div>
-                    <div class="spec-row">
-                        <span class="spec-label">AI Confidence Score</span>
-                        <span class="spec-value">{guide.xai_reasoning.confidence_score}%</span>
+                    <div class="grid-2">
+                        <div>
+                            <div class="grid-item-label">추정 재질</div>
+                            <div class="grid-item-val">{guide.material}</div>
+                        </div>
+                        <div>
+                            <div class="grid-item-label">기본 재활용률</div>
+                            <div class="grid-item-val">{guide.recycling_rate_pct}%</div>
+                        </div>
+                        <div>
+                            <div class="grid-item-label">AI 신뢰도</div>
+                            <div class="grid-item-val">{guide.xai_reasoning.confidence_score}%</div>
+                        </div>
+                        <div>
+                            <div class="grid-item-label">배출 지역</div>
+                            <div class="grid-item-val">{location}</div>
+                        </div>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
 
-                # 3. Steps Block
+                # AI XAI 상세 근거 (왜 햇반이 재활용이 어려운지 등의 심층 이유)
                 st.write("")
-                st.markdown("##### Disposal Protocol")
-                for i, step in enumerate(guide.steps, 1):
-                    st.markdown(f"**0{i}** &nbsp;&nbsp; {step}")
+                st.markdown("##### 💡 AI 판단 근거 (Explainable AI)")
+                for feature in guide.xai_reasoning.visual_features:
+                    st.markdown(f"• {feature}")
 
-                # 4. Impact
+                # 배출 방법
+                st.write("")
+                st.markdown("##### 📋 올바른 배출 수칙")
+                for i, step in enumerate(guide.steps, 1):
+                    st.markdown(f"**{i}.** {step}")
+
+                # 주의사항 / 예외 조건
+                if guide.cautions:
+                    st.write("")
+                    st.info("💡 **배출 팁 & 예외 조건:**\n" + "\n".join([f"- {c}" for c in guide.cautions]))
+
+                # 환경 영향
                 mat_key = guide.material if guide.material in CO2_FACTORS else "Other"
                 impact = CO2_FACTORS[mat_key]
-
                 st.write("")
-                st.markdown(f"""
-                <div style="background:#FFFFFF; padding:24px; border-radius:16px; border:1px solid rgba(0,0,0,0.04); margin-top:20px;">
-                    <div style="font-size:0.85rem; color:#86868B; margin-bottom:8px;">ENVIRONMENTAL IMPACT</div>
-                    <div style="display:flex; gap:32px;">
-                        <div>
-                            <div style="font-size:1.4rem; font-weight:600; color:#1D1D1F;">{impact['co2']}g</div>
-                            <div style="font-size:0.8rem; color:#86868B;">CO₂ Saved</div>
-                        </div>
-                        <div>
-                            <div style="font-size:1.4rem; font-weight:600; color:#1D1D1F;">{impact['water']}L</div>
-                            <div style="font-size:0.8rem; color:#86868B;">Water Preserved</div>
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                # 5. SDG Footnote
-                st.write("")
-                st.caption(f"🌍 **UN SDGs Compliance:** {guide.sdg_impact}")
+                st.caption(f"🌱 이 배출 실천으로 **CO₂ 약 {impact['co2']}g** 절감 및 **물 {impact['water']}L**가 보존됩니다. ({guide.sdg_impact})")
 
             except Exception as e:
-                st.error(f"Analysis error: {e}")
+                st.error(f"분석 중 오류가 발생했습니다: {e}")
 
-# Bottom Minimal Landing Footer
 st.write("")
 st.write("")
 st.markdown("""
-<div style="border-top: 1px solid rgba(0,0,0,0.06); padding-top: 32px; font-size: 0.8rem; color: #86868B; display: flex; justify-content: space-between;">
-    <span>EcoLens AI © 2026</span>
-    <span>Powered by Groq & UN SDG Framework</span>
+<div style="border-top: 1px solid #EEEEEE; padding-top: 20px; font-size: 0.8rem; color: #999999; text-align: center;">
+    EcoLens AI © 2026 — Sustainable Products Intelligence
 </div>
 """, unsafe_allow_html=True)

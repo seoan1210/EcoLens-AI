@@ -1,6 +1,7 @@
 import os
 import json
 import base64
+import random
 from datetime import datetime
 from typing import List, Optional
 from PIL import Image
@@ -23,12 +24,13 @@ class RecyclingGuide(BaseModel):
     material: str = Field(description="추정 재질 (예: PET, PP, 종이팩, 유리, 복합재질 등)")
     category: str = Field(description="대분류 (예: 플라스틱, 비닐류, 일반쓰레기, 대형폐기물, 폐가전 등)")
     confidence: str = Field(description="판별 신뢰도 ('high', 'medium', 'low')")
-    steps: List[str] = Field(description="실행형 3단계 배출 절차", min_items=1, max_items=4)
+    steps: List[str] = Field(description="실행형 3~4단계 배출 절차", min_items=1, max_items=4)
     cautions: List[str] = Field(description="배출 시 주의사항 및 예외 조건")
     local_note: Optional[str] = Field(default=None, description="지역별 전용 수거 기준 관련 참고사항")
     sources: List[SourceItem] = Field(default=[], description="검색된 근거 정보 출처 목록")
     eco_tip: str = Field(description="친환경 실천 팁 및 실천 행동")
     co2_reduction_est: str = Field(description="올바른 분리배출 시 예상 효과 (예: '약 15g CO2 절감 효과')")
+    recycling_grade: str = Field(description="재활용 용이성 등급 ('최우수', '우수', '보통', '어려움')")
     needs_confirmation: bool = Field(default=False, description="지자체/상세 재질 추가 확인 필요 여부")
 
 
@@ -78,8 +80,8 @@ class RecyclingService:
         [지침]
         1. 이미지나 텍스트가 불명확하면 confidence를 'low'로 설정하고 needs_confirmation을 true로 설정하세요.
         2. 검색 컨텍스트에 나와있지 않은 지자체 특화 규정은 절대 지어내지 말고, 불확실하면 지자체 확인 필요라고 안내하세요.
-        3. steps는 사용자가 바로 행동할 수 있는 3~4단계 절차로 작성하세요. (예: 비운다 -> 헹군다 -> 라벨 제거 -> 배출한다)
-        4. co2_reduction_est는 정성적/추정 수치로 친환경적 동기부여가 되는 문구를 작성하세요.
+        3. steps는 사용자가 바로 행동할 수 있는 3~4단계 절차로 작성하세요.
+        4. recycling_grade는 '최우수', '우수', '보통', '어려움' 중 하나로 정하세요.
         
         [반환할 JSON 구조]
         {json.dumps(RecyclingGuide.model_json_schema(), ensure_ascii=False, indent=2)}
@@ -134,97 +136,137 @@ class RecyclingService:
 # ==============================================================================
 
 st.set_page_config(
-    page_title="EcoLens AI — 스마트 AI 분리배출 도우미",
+    page_title="EcoLens AI — 스마트 AI 분리배출 센터",
     page_icon="🌱",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# 세션 상태 초기화 (기록 및 통계)
+# 세션 상태 초기화
 if "history" not in st.session_state:
     st.session_state.history = []
 if "action_count" not in st.session_state:
     st.session_state.action_count = 0
+if "saved_co2" not in st.session_state:
+    st.session_state.saved_co2 = 0.0
+if "quiz_score" not in st.session_state:
+    st.session_state.quiz_score = 0
 
-# 커스텀 고품질 디자인 시스템 CSS
+# 강제 라이트 모드 및 고급 애니메이션 CSS
 st.markdown("""
 <style>
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-    * { font-family: 'Pretendard', sans-serif; }
     
-    .stApp { background-color: #F8F9FA; }
+    /* 1. 강제 라이트 모드 배경 고정 */
+    html, body, [data-testid="stAppViewContainer"], .stApp {
+        background-color: #F8FAFC !important;
+        color: #0F172A !important;
+        font-family: 'Pretendard', sans-serif;
+    }
     
-    /* Header UI */
-    .header-container {
-        background: linear-gradient(135deg, #1E3A1E 0%, #2D5A27 100%);
-        padding: 32px;
-        border-radius: 20px;
-        color: white;
+    [data-testid="stSidebar"] {
+        background-color: #FFFFFF !important;
+        border-right: 1px solid #E2E8F0;
+    }
+
+    /* Keyframe 애니메이션 정의 */
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(12px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    @keyframes pulseGlow {
+        0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+        70% { box-shadow: 0 0 0 12px rgba(34, 197, 94, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+    }
+
+    /* 요소별 애니메이션 적용 */
+    .animated-card {
+        animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    
+    .pulse-badge {
+        animation: pulseGlow 2s infinite;
+    }
+
+    /* UI 컴포넌트 라이트 모드 패치 */
+    .stTextInput input, .stSelectbox div[data-baseweb="select"] {
+        background-color: #FFFFFF !important;
+        color: #0F172A !important;
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 10px !important;
+    }
+
+    /* Custom Header */
+    .header-banner {
+        background: linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%);
+        padding: 32px 40px;
+        border-radius: 24px;
+        color: white !important;
         margin-bottom: 24px;
-        box-shadow: 0 10px 25px rgba(45, 90, 39, 0.15);
+        box-shadow: 0 10px 25px rgba(16, 185, 129, 0.2);
     }
-    .header-title { font-size: 2.2rem; font-weight: 800; margin: 0; color: #FFFFFF; }
-    .header-subtitle { font-size: 1rem; color: #A7F3D0; margin-top: 8px; font-weight: 400; }
     
-    /* Metric / Stat Card */
-    .metric-card {
-        background: white;
+    .header-banner h1 {
+        color: #FFFFFF !important;
+        font-weight: 800;
+        margin: 0;
+        font-size: 2.3rem;
+    }
+
+    /* Stat Dashboard Cards */
+    .stat-card {
+        background: #FFFFFF;
         padding: 20px;
-        border-radius: 16px;
-        border: 1px solid #E5E7EB;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-        text-align: center;
-    }
-    .metric-value { font-size: 1.8rem; font-weight: 800; color: #2D5A27; }
-    .metric-label { font-size: 0.85rem; color: #6B7280; margin-top: 4px; }
-    
-    /* Main Hero Guide Card */
-    .guide-hero {
-        background: white;
-        border-radius: 20px;
-        padding: 28px;
+        border-radius: 18px;
         border: 1px solid #E2E8F0;
-        box-shadow: 0 12px 30px rgba(0,0,0,0.05);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+        text-align: center;
+        transition: transform 0.2s ease;
+    }
+    .stat-card:hover {
+        transform: translateY(-3px);
+    }
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 800;
+        color: #059669;
+    }
+    .stat-label {
+        font-size: 0.85rem;
+        color: #64748B;
+        font-weight: 600;
+        margin-top: 4px;
+    }
+
+    /* Card Box UI */
+    .card-box {
+        background: #FFFFFF;
+        padding: 24px;
+        border-radius: 20px;
+        border: 1px solid #E2E8F0;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.02);
         margin-bottom: 20px;
     }
-    .badge-category {
-        background-color: #E6F4EA;
-        color: #137333;
-        padding: 6px 14px;
-        border-radius: 20px;
+
+    /* Badges */
+    .badge-grade {
+        background-color: #DCFCE7;
+        color: #15803D;
         font-weight: 700;
-        font-size: 0.9rem;
-        display: inline-block;
-        margin-left: 10px;
+        padding: 6px 14px;
+        border-radius: 12px;
+        font-size: 0.85rem;
     }
-    .badge-confidence {
-        background-color: #FEF3C7;
-        color: #92400E;
-        padding: 4px 10px;
+
+    .step-box {
+        background: #F8FAFC;
+        border-left: 4px solid #10B981;
+        padding: 14px 18px;
         border-radius: 8px;
-        font-size: 0.75rem;
-        font-weight: 600;
-    }
-    
-    /* Step Box */
-    .step-card {
-        background: #F9FAFB;
-        border-left: 4px solid #2D5A27;
-        padding: 16px 20px;
-        border-radius: 8px;
-        margin-bottom: 12px;
-        font-size: 0.98rem;
-    }
-    .step-num { font-weight: 800; color: #2D5A27; margin-right: 8px; }
-    
-    /* Eco Tip Box */
-    .eco-box {
-        background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
-        border: 1px solid #A7F3D0;
-        padding: 20px;
-        border-radius: 16px;
-        color: #065F46;
-        margin-top: 20px;
+        margin-bottom: 10px;
+        font-weight: 500;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -233,89 +275,119 @@ st.markdown("""
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
 TAVILY_API_KEY = st.secrets.get("TAVILY_API_KEY") or os.environ.get("TAVILY_API_KEY")
 
-# 상단 헤더
+# 상단 헤더 배너
 st.markdown("""
-<div class="header-container">
-    <div class="header-title">🌱 EcoLens AI</div>
-    <div class="header-subtitle">초고속 Groq Llama 3.3 AI와 실시간 지자체 RAG 기반의 스마트 분리배출 도우미</div>
+<div class="header-banner animated-card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h1>🌱 EcoLens AI 센터</h1>
+            <p style="margin-top: 8px; opacity: 0.95; font-size: 1.05rem;">
+                Groq Llama 3.3 초고속 추론 엔진 & RAG 기반의 실시간 지자체 분리배출 플랫폼
+            </p>
+        </div>
+        <div class="pulse-badge" style="background: rgba(255,255,255,0.2); padding: 10px 20px; border-radius: 30px; font-weight: 700;">
+            ⚡ LIVE ENGINE ACTIVE
+        </div>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
 if not GROQ_API_KEY or not TAVILY_API_KEY:
-    st.error("⚠️ API 키가 필요합니다. `.streamlit/secrets.toml`에 `GROQ_API_KEY`와 `TAVILY_API_KEY`를 등록해주세요.")
+    st.error("⚠️ API 키가 설정되지 않았습니다. `.streamlit/secrets.toml`에 `GROQ_API_KEY`와 `TAVILY_API_KEY`를 추가해 주세요.")
     st.stop()
 
 service = RecyclingService(groq_api_key=GROQ_API_KEY, tavily_api_key=TAVILY_API_KEY)
 
-# 대시보드 통계 카드
-m1, m2, m3 = st.columns(3)
-with m1:
+# 1. 상단 대시보드 (4 컬럼 구성)
+d1, d2, d3, d4 = st.columns(4)
+with d1:
     st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-value">{len(st.session_state.history)}건</div>
-        <div class="metric-label">이번 세션 분석 횟수</div>
+    <div class="stat-card animated-card">
+        <div class="stat-value">{len(st.session_state.history)}건</div>
+        <div class="stat-label">🔍 누적 판별 횟수</div>
     </div>
     """, unsafe_allow_html=True)
-with m2:
+with d2:
     st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-value">{st.session_state.action_count}회</div>
-        <div class="metric-label">올바른 실천 인증 완료</div>
+    <div class="stat-card animated-card">
+        <div class="stat-value">{st.session_state.action_count}회</div>
+        <div class="stat-label">✅ 올바른 배출 실천</div>
     </div>
     """, unsafe_allow_html=True)
-with m3:
-    st.markdown("""
-    <div class="metric-card">
-        <div class="metric-value" style="color:#059669;">98.2%</div>
-        <div class="metric-label">공공 출처 RAG 정확도</div>
+with d3:
+    st.markdown(f"""
+    <div class="stat-card animated-card">
+        <div class="stat-value" style="color: #2563EB;">{st.session_state.saved_co2:.1f}g</div>
+        <div class="stat-label">🍃 절감한 예상 CO2</div>
+    </div>
+    """, unsafe_allow_html=True)
+with d4:
+    st.markdown(f"""
+    <div class="stat-card animated-card">
+        <div class="stat-value" style="color: #D97706;">{st.session_state.quiz_score}점</div>
+        <div class="stat-label">🏆 환경 퀴즈 포인트</div>
     </div>
     """, unsafe_allow_html=True)
 
 st.write("")
 
-# 메인 레이아웃 (좌: 입력 및 최근기록 / 우: 분석 결과)
-left_col, right_col = st.columns([1, 1.2], gap="large")
+# 2. 메인 3컬럼 레이아웃 (좌: 입력 / 중: 결과 리포트 / 우: 보조 기능 및 퀴즈)
+col_left, col_mid, col_right = st.columns([1.1, 1.3, 1], gap="medium")
 
-with left_col:
-    st.subheader("🔍 품목 판별 입력")
+# ------------------------------------------------------------------------------
+# [왼쪽 컬럼] 입력 및 조건 설정
+# ------------------------------------------------------------------------------
+with col_left:
+    st.markdown('<div class="card-box animated-card">', unsafe_allow_html=True)
+    st.subheader("🔍 품목 판별하기")
     
-    tab1, tab2 = st.tabs(["📷 사진 분석", "✍️ 텍스트 검색"])
+    tab_img, tab_txt = st.tabs(["📷 사진 첨부", "✍️ 텍스트 검색"])
     
     uploaded_image = None
     item_text = None
     
-    with tab1:
-        img_file = st.file_uploader("버리려는 물건이나 쓰레기 사진을 첨부하세요", type=["jpg", "jpeg", "png", "webp"])
+    with tab_img:
+        img_file = st.file_uploader("배출할 물품 사진 선택", type=["jpg", "jpeg", "png", "webp"])
         if img_file:
             uploaded_image = Image.open(img_file)
-            st.image(uploaded_image, caption="분석 대상 이미지", use_container_width=True)
+            st.image(uploaded_image, caption="업로드된 영상/이미지", use_container_width=True)
             
-    with tab2:
-        item_text = st.text_input("물건 이름 입력", placeholder="예: 햇반 용기, 배달 음식 뚜껑, 뽁뽁이, 폐건전지")
+    with tab_txt:
+        item_text = st.text_input("품목명 직접 입력", placeholder="예: 햇반 용기, 컵라면 용기, 뽁뽁이")
 
     location = st.selectbox(
-        "📍 배출할 지역 선택 (지자체별 맞춤 지침)",
+        "📍 배출 지역 선택",
         ["전국 공통", "서울특별시 강남구", "서울특별시 마포구", "경기도 수원시", "부산광역시 해운대구", "대구광역시 수성구", "인천광역시 연수구"],
         index=0
     )
 
-    analyze_btn = st.button("✨ AI 분리배출 가이드 생성", type="primary", use_container_width=True)
+    analyze_btn = st.button("✨ 초고속 AI 분석 시작", type="primary", use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # 최근 분석 히스토리
-    if st.session_state.history:
-        st.write("---")
-        st.subheader("📜 최근 분석 기록")
-        for item in reversed(st.session_state.history[-5:]):
-            st.caption(f"🕒 {item['time']} | **{item['name']}** ({item['category']}) - {item['location']}")
+    # 지자체 수거요일 정보 가이드 (화면을 꽉 채우기 위한 추가 정보 블록)
+    st.markdown("""
+    <div class="card-box animated-card" style="margin-top: 15px;">
+        <h4 style="margin-top:0; color:#0F172A;">📅 일반적인 지자체 수거 원칙</h4>
+        <ul style="font-size:0.88rem; color:#475569; padding-left:20px; margin-bottom:0;">
+            <li><b>투명 페트병:</b> 지정된 요일 별도 배출 (라벨 제거 필수)</li>
+            <li><b>음식물 용기:</b> 이물질 완벽 세척 후 플라스틱 배출</li>
+            <li><b>스티로폼:</b> 흰색 단일 소재만 가능 (택배 운송장 제거)</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
 
-with right_col:
-    st.subheader("📋 AI 맞춤 배출 리포트")
+# ------------------------------------------------------------------------------
+# [중앙 컬럼] AI 리포트 결과 출력
+# ------------------------------------------------------------------------------
+with col_mid:
+    st.markdown('<div class="card-box animated-card">', unsafe_allow_html=True)
+    st.subheader("📋 AI 스마트 분석 리포트")
     
     if analyze_btn:
         if not uploaded_image and not item_text:
-            st.warning("사진을 올려주시거나 물건 이름을 입력해주세요.")
+            st.warning("사진을 업로드하거나 품목명을 입력해 주세요.")
         else:
-            with st.spinner("⚡ Groq Llama 3.3과 Tavily가 공공 규정을 조회하여 분석 중입니다..."):
+            with st.spinner("⚡ Groq Llama 3.3이 RAG 정보와 함께 분석 중입니다..."):
                 try:
                     guide = service.analyze_and_guide(
                         item_text=item_text,
@@ -323,67 +395,99 @@ with right_col:
                         location=location
                     )
 
-                    # 히스토리 저장
+                    # 세션 히스토리 및 통계 업데이트
                     st.session_state.history.append({
                         "time": datetime.now().strftime("%H:%M"),
                         "name": guide.item_name,
                         "category": guide.category,
-                        "location": location
                     })
+                    st.session_state.saved_co2 += 15.0  # 평균 절감치 추가
 
-                    # 결과 카드 렌더링
                     st.markdown(f"""
-                    <div class="guide-hero">
+                    <div style="background:#F1F5F9; padding:18px; border-radius:14px; margin-bottom:15px;">
                         <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span class="badge-confidence">판별 신뢰도: {guide.confidence.upper()}</span>
-                            <span style="font-size:0.85rem; color:#6B7280;">재질: <b>{guide.material}</b></span>
+                            <span class="badge-grade">재활용 등급: {guide.recycling_grade}</span>
+                            <span style="font-size:0.85rem; color:#64748B;">신뢰도: <b>{guide.confidence.upper()}</b></span>
                         </div>
-                        <h2 style="margin-top:12px; margin-bottom:0; color:#111827;">
-                            {guide.item_name} <span class="badge-category">{guide.category}</span>
-                        </h2>
+                        <h2 style="margin: 10px 0 0 0; color:#0F172A;">{guide.item_name}</h2>
+                        <p style="margin:4px 0 0 0; color:#475569; font-size:0.95rem;">
+                            재질: <b>{guide.material}</b> | 분류: <b>{guide.category}</b>
+                        </p>
                     </div>
                     """, unsafe_allow_html=True)
 
                     if guide.needs_confirmation:
-                        st.warning("⚠️ **상세 확인 필요:** 복합 재질이거나 형태가 모호합니다. 용기 바닥/라벨의 재질 마크(PE, PP, OTHER 등)를 꼭 확인하세요.")
+                        st.info("💡 용기 하단 표기나 이물질 묻음 여부를 한번 더 확인해 주세요.")
 
-                    st.markdown("#### 🛠️ 단계별 배출 방법")
+                    st.markdown("#### 🛠️ 단계별 배출 가이드")
                     for idx, step in enumerate(guide.steps, 1):
                         st.markdown(f"""
-                        <div class="step-card">
-                            <span class="step-num">STEP {idx}</span> {step}
+                        <div class="step-box">
+                            <b style="color:#10B981;">0{idx}.</b> {step}
                         </div>
                         """, unsafe_allow_html=True)
 
                     if guide.cautions:
-                        st.markdown("#### ⚠️ 꼭 주의하세요!")
+                        st.markdown("#### ⚠️ 주의사항")
                         for caution in guide.cautions:
                             st.error(f"• {caution}")
 
                     if guide.local_note:
-                        st.info(f"📍 **{location} 수거 안내:** {guide.local_note}")
+                        st.warning(f"📍 **{location} 안내:** {guide.local_note}")
 
-                    # 실천 체크리스트 & 친환경 팁
                     st.markdown(f"""
-                    <div class="eco-box">
-                        <h4 style="margin-top:0; color:#065F46;">🌱 환경 효과 & 팁</h4>
-                        <p style="margin-bottom:8px;"><b>예상 효과:</b> {guide.co2_reduction_est}</p>
-                        <p style="margin-bottom:0;"><b>실천 팁:</b> {guide.eco_tip}</p>
+                    <div style="background:#ECFDF5; border:1px solid #A7F3D0; padding:16px; border-radius:12px; margin-top:15px;">
+                        <b style="color:#047857;">🌱 친환경 실천 팁:</b> {guide.eco_tip}<br>
+                        <small style="color:#065F46;"> 예상 효과: {guide.co2_reduction_est}</small>
                     </div>
                     """, unsafe_allow_html=True)
 
                     st.write("")
-                    if st.button("✅ 올바르게 분리배출을 완료했어요!"):
+                    if st.button("✅ 배출 완료 인증 및 CO2 절감하기", use_container_width=True):
                         st.session_state.action_count += 1
                         st.balloons()
-                        st.success("친환경 실천 1회가 추가되었습니다!")
-
-                    if guide.sources:
-                        with st.expander("🔗 공공 기관 근거 및 출처 원문"):
-                            for src in guide.sources:
-                                st.write(f"- [{src.title}]({src.url}) (검색일: {src.published_or_checked})")
+                        st.success("실천 인증이 완료되어 CO2 절감량이 반영되었습니다!")
 
                 except Exception as e:
-                    st.error(f"분석 도중 오류가 발생했습니다: {e}")
+                    st.error(f"분석 중 오류가 발생했습니다: {e}")
     else:
-        st.info("👈 왼쪽에서 사진을 찍거나 물건 이름을 입력해 분석을 시작하세요.")
+        st.info("👈 좌측에서 분석을 시작하면 상세 리포트가 이곳에 나타납니다.")
+        
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ------------------------------------------------------------------------------
+# [오른쪽 컬럼] 미니 게임, 히스토리 및 Q&A (화면을 가득 채우는 서브 모듈)
+# ------------------------------------------------------------------------------
+with col_right:
+    # 1. 최근 분석 기록
+    st.markdown('<div class="card-box animated-card">', unsafe_allow_html=True)
+    st.subheader("📜 최근 판별 기록")
+    if st.session_state.history:
+        for item in reversed(st.session_state.history[-4:]):
+            st.markdown(f"• **{item['name']}** <small>({item['category']}) - {item['time']}</small>", unsafe_allow_html=True)
+    else:
+        st.caption("아직 기록이 없습니다.")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 2. 미니 분리배출 퀴즈 (참여형 요소)
+    st.markdown('<div class="card-box animated-card">', unsafe_allow_html=True)
+    st.subheader("🧩 1초 환경 퀴즈")
+    st.write("**Q. 깨진 유리는 유리 재활용으로 배출해야 할까요?**")
+    q_col1, q_col2 = st.columns(2)
+    with q_col1:
+        if st.button("⭕ 그렇다"):
+            st.error("❌ 틀렸습니다! 깨진 유리는 쓰레기 종량제 봉투나 불연성 마대에 버려야 합니다.")
+    with q_col2:
+        if st.button("❌ 아니다"):
+            st.success("⭕ 정답입니다! 깨진 유리는 재활용이 불가능합니다.")
+            st.session_state.quiz_score += 10
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 3. 자주 묻는 질문 (FAQ)
+    st.markdown('<div class="card-box animated-card">', unsafe_allow_html=True)
+    st.subheader("❓ 자주 묻는 Q&A")
+    with st.expander("Q. 씻어도 안 지워지는 용기는?"):
+        st.write("양념이 완전히 착색된 스티로폼이나 플라스틱은 일반 쓰레기로 버려야 합니다.")
+    with st.expander("Q. 영수증은 종이류인가요?"):
+        st.write("혼합 재질(감열지)이므로 일반 쓰레기로 배출해야 합니다.")
+    st.markdown('</div>', unsafe_allow_html=True)

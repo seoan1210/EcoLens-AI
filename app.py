@@ -1,14 +1,12 @@
 import os
 import json
-import base64
 from typing import List, Optional
-from PIL import Image
 import streamlit as st
 from pydantic import BaseModel, Field
 from groq import Groq
 
 # ==============================================================================
-# 1. Enterprise Inspection Schema (Single-Pass Integration)
+# 1. Enterprise Inspection Schema
 # ==============================================================================
 class SubComponent(BaseModel):
     name: str = Field(description="부품명 (예: 플라스틱 용기, 비닐 필름, 종이 띠지)")
@@ -96,66 +94,117 @@ class EcoLensEngine:
         return res.choices[0].message.content
 
 # ==============================================================================
-# 3. Streamlit Premium Inspection UI & Theme Fixes
+# 3. Streamlit Liquid Glass & Keyframe Animation Design
 # ==============================================================================
 st.set_page_config(page_title="EcoLens Intelligence Engine", page_icon="🌱", layout="centered")
 
-# CSS: 다크모드/라이트모드 텍스트 가독성 및 HTML 태그 스타일링 보정
 st.markdown("""
 <style>
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+    /* Keyframe Animations */
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
     
+    @keyframes pulseGlow {
+        0% { box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.08); }
+        50% { box-shadow: 0 8px 32px 0 rgba(52, 211, 153, 0.2); }
+        100% { box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.08); }
+    }
+
+    /* Background Setup */
     html, body, [data-testid="stAppViewContainer"], .stApp {
-        background-color: #FAFAFA !important;
+        background: linear-gradient(135deg, #F0F4F8 0%, #E2E8F0 100%) !important;
         color: #0F172A !important;
         font-family: 'Pretendard', sans-serif !important;
     }
     .block-container { padding-top: 2rem !important; max-width: 700px !important; }
-    
-    /* Engine Header */
+
+    /* Engine Header Glass */
     .engine-header {
         display: flex; justify-content: space-between; align-items: center;
-        padding-bottom: 12px; margin-bottom: 20px; border-bottom: 2px solid #0F172A;
+        padding: 16px 20px; border-radius: 16px;
+        background: rgba(255, 255, 255, 0.65);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.8);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+        margin-bottom: 24px;
     }
     .engine-title { font-size: 1.2rem; font-weight: 800; color: #0F172A; }
-    
-    /* Inspection Sheet Box */
-    .inspection-sheet {
-        background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px;
-        padding: 24px; margin-top: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+
+    /* Liquid Glass Card Container */
+    .glass-card {
+        background: rgba(255, 255, 255, 0.55);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.9);
+        padding: 24px;
+        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+        animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        margin-top: 10px;
     }
-    
-    /* Score Grid Fix */
+
+    /* Score Grid Inside Glass */
     .score-grid {
-        display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
-        text-align: center; background: #F8FAFC; padding: 12px; border-radius: 10px;
-        font-size: 0.85rem; border: 1px solid #E2E8F0;
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+        text-align: center;
+        background: rgba(255, 255, 255, 0.4);
+        backdrop-filter: blur(8px);
+        padding: 12px; border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.6);
     }
     .score-grid div span { display: block; color: #64748B; font-size: 0.75rem; margin-bottom: 2px; }
     .score-grid div b { color: #0F172A; font-size: 0.95rem; }
 
-    /* Stamps */
-    .stamp-pass { background: #DCFCE7; color: #166534; font-weight: 800; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; }
-    .stamp-warning { background: #FEF9C3; color: #854D0E; font-weight: 800; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; }
-    .stamp-fail { background: #FEE2E2; color: #991B1B; font-weight: 800; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; }
-    
-    /* Checklist Table */
+    /* Stamps with Subtle Glow */
+    .stamp-pass { background: rgba(220, 252, 231, 0.9); color: #166534; font-weight: 800; padding: 4px 10px; border-radius: 8px; font-size: 0.75rem; border: 1px solid #BBF7D0; }
+    .stamp-warning { background: rgba(254, 249, 195, 0.9); color: #854D0E; font-weight: 800; padding: 4px 10px; border-radius: 8px; font-size: 0.75rem; border: 1px solid #FEF08A; }
+    .stamp-fail { background: rgba(254, 226, 226, 0.9); color: #991B1B; font-weight: 800; padding: 4px 10px; border-radius: 8px; font-size: 0.75rem; border: 1px solid #FCA5A5; }
+
+    /* Checklist Row Hover Animation */
     .checklist-row {
         display: flex; justify-content: space-between; align-items: center;
-        padding: 10px 0; border-bottom: 1px dashed #E2E8F0; font-size: 0.9rem; color: #0F172A;
+        padding: 12px 14px; margin-bottom: 6px; border-radius: 12px;
+        background: rgba(255, 255, 255, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        transition: all 0.25s ease-in-out;
+        color: #0F172A; font-weight: 500; font-size: 0.9rem;
+    }
+    .checklist-row:hover {
+        transform: translateX(4px);
+        background: rgba(255, 255, 255, 0.75);
+        border-color: rgba(255, 255, 255, 1);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
     }
 
-    /* Radio Button Text Color Fix */
+    /* Radio Label Glass Fix */
     div[data-testid="stRadio"] label p {
         color: #0F172A !important;
         font-weight: 700 !important;
         font-size: 0.9rem !important;
     }
     
-    /* Warning Box Text Color Fix */
-    .stAlert p {
-        color: #78350F !important;
-        font-weight: 600 !important;
+    /* Input Styling Liquid Gloss */
+    div[data-baseweb="input"] {
+        background: rgba(255, 255, 255, 0.6) !important;
+        backdrop-filter: blur(10px) !important;
+        border-radius: 12px !important;
+        border: 1px solid rgba(255, 255, 255, 0.8) !important;
+    }
+
+    /* Animated Button */
+    div.stButton > button {
+        border-radius: 14px !important;
+        font-weight: 700 !important;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    }
+    div.stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(16, 185, 129, 0.3) !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -167,15 +216,15 @@ if not GROQ_API_KEY:
 
 engine = EcoLensEngine(groq_api_key=GROQ_API_KEY)
 
-# Header
+# Liquid Glass Header
 st.markdown("""
 <div class="engine-header">
     <div class="engine-title">🌱 EcoLens Intelligence Engine v2.6</div>
-    <span class="stamp-pass">SINGLE-PASS INSPECTOR</span>
+    <span class="stamp-pass">LIQUID GLASS ENGINE</span>
 </div>
 """, unsafe_allow_html=True)
 
-# Input
+# Input Box
 target_input = st.text_input("검사 대상 입력", placeholder="예: 햇반, 도시락, 삼다수, 컵라면", key="engine_input_key")
 location = st.selectbox("배출 규정 지역", ["전국 공통 기준", "서울특별시 강남구", "경기도 수원시"], label_visibility="collapsed")
 
@@ -191,7 +240,7 @@ if st.button("🔬 Execute Inspection Report →", type="primary", use_container
                 st.error(f"검사 실패: {e}")
 
 # ==============================================================================
-# DISPLAY REPORT
+# DISPLAY REPORT (Liquid Glass & Animated UI)
 # ==============================================================================
 if "report" in st.session_state and st.session_state.report:
     rep: InspectionReport = st.session_state.report
@@ -199,7 +248,7 @@ if "report" in st.session_state and st.session_state.report:
     st.write("")
     st.subheader("📄 Inspection Report")
     
-    # Component Radio (라벨 글자색 스타일 패치 적용 완료)
+    # Sub-component Selector
     if rep.is_ambiguous and rep.components:
         st.caption("💡 복합 구성품 감지됨. 세부 부품을 선택하여 지침을 확인하세요:")
         comp_names = [f"{c.name} ({c.material})" for c in rep.components]
@@ -213,21 +262,21 @@ if "report" in st.session_state and st.session_state.report:
         elif status == "WARNING": return '<span class="stamp-warning">WARNING</span>'
         return '<span class="stamp-fail">FAIL</span>'
 
-    # Main Score & Grade Sheet (HTML 주석 제거 및 grid 클래스 적용으로 깨짐 해결)
+    # Main Liquid Glass Card
     st.markdown(f"""
-    <div class="inspection-sheet">
+    <div class="glass-card">
         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
             <div>
                 <span style="color:#64748B; font-size:0.8rem; font-weight:700;">ITEM INSPECTED</span>
-                <h2 style="margin:2px 0 6px 0; font-size:1.5rem; color:#0F172A;">{rep.detected_item} {f' - {active_comp.name}' if active_comp else ''}</h2>
+                <h2 style="margin:2px 0 6px 0; font-size:1.55rem; color:#0F172A;">{rep.detected_item} {f' - {active_comp.name}' if active_comp else ''}</h2>
                 <span style="font-size:0.85rem; color:#475569;">배출 분류: <b style="color:#0F172A;">{rep.primary_category}</b></span>
             </div>
             <div style="text-align:right;">
-                <div style="font-size:2.2rem; font-weight:900; color:#0F172A; line-height:1;">{rep.total_score}<span style="font-size:1rem; color:#64748B;">/100</span></div>
+                <div style="font-size:2.3rem; font-weight:900; color:#0F172A; line-height:1;">{rep.total_score}<span style="font-size:1rem; color:#64748B;">/100</span></div>
                 <div style="font-weight:800; color:#166534; font-size:0.95rem; margin-top:2px;">Grade {rep.grade}</div>
             </div>
         </div>
-        <hr style="border:none; border-top:1px solid #E2E8F0; margin:16px 0;">
+        <hr style="border:none; border-top:1px solid rgba(226, 232, 240, 0.8); margin:18px 0;">
         <div class="score-grid">
             <div><span>재질 평가</span><b>{rep.score_breakdown.material_score}/25</b></div>
             <div><span>세척 상태</span><b>{rep.score_breakdown.cleaning_score}/20</b></div>
@@ -237,7 +286,7 @@ if "report" in st.session_state and st.session_state.report:
     </div>
     """, unsafe_allow_html=True)
 
-    # Inspection Checklist Table
+    # Hover Interactive Checklist
     st.write("")
     st.markdown("##### 🚗 6대 정밀 검사 항목 (Inspection Checklist)")
     
@@ -259,7 +308,7 @@ if "report" in st.session_state and st.session_state.report:
         </div>
         """, unsafe_allow_html=True)
 
-    # AI Confidence Heatmap
+    # Confidence Heatmap
     st.write("")
     st.markdown("##### 📊 AI Confidence Heatmap")
     c1, c2, c3 = st.columns(3)
@@ -272,7 +321,7 @@ if "report" in st.session_state and st.session_state.report:
     c3.caption(f"위험 감지: {rep.confidence.risk_confidence}%")
     c3.progress(rep.confidence.risk_confidence / 100)
 
-    # Steps & Warnings
+    # Protocol Steps
     st.write("")
     st.markdown("##### 📋 배출 실행 수칙")
     for i, step in enumerate(rep.steps, 1):
@@ -281,7 +330,7 @@ if "report" in st.session_state and st.session_state.report:
     if rep.warning_notes:
         st.warning(f"⚠️ **Inspection Warning:** {rep.warning_notes}")
 
-    # Zero-Cost Instant Q&A Chips
+    # Instant Q&A Glass Chips
     st.divider()
     st.markdown("### 💬 Ask Intelligence")
     st.caption("자주 묻는 질문은 AI Engine이 데이터를 즉시 렌더링합니다. (0초 소요, LLM 미사용)")

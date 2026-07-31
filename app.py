@@ -1,8 +1,8 @@
 import os
 import json
 import base64
-from typing import List, Optional, Dict
-from PIL import Image, ImageDraw
+from typing import List, Optional
+from PIL import Image
 import streamlit as st
 from pydantic import BaseModel, Field
 from groq import Groq
@@ -21,7 +21,7 @@ class InspectionChecklist(BaseModel):
     material_analysis: str = Field(description="재질 분석 (PASS, WARNING, FAIL)")
     residue_detection: str = Field(description="잔여물 검수 (PASS, WARNING, FAIL)")
     label_detection: str = Field(description="라벨/필름 검수 (PASS, WARNING, FAIL)")
-    cap_detection: str = Field(description="뚜껑/부속품 검수 (PASS, WARNING, FAIL)")
+    cap_detection: str = Field(description="뚜껑/이물질 검수 (PASS, WARNING, FAIL)")
     local_policy: str = Field(description="지자체 정책 준수 (PASS, WARNING, FAIL)")
 
 class ConfidenceMetrics(BaseModel):
@@ -36,25 +36,23 @@ class ScoreBreakdown(BaseModel):
     policy_score: int = Field(description="규정 적합 점수 (max 25)")
 
 class InspectionReport(BaseModel):
-    detected_item: str = Field(description="감지된 품목 대표명 (예: 햇반)")
+    detected_item: str = Field(description="감지된 품목 대표명 (예: 도시락, 햇반)")
     is_ambiguous: bool = Field(description="복합 제품 여부")
     components: List[SubComponent] = Field(description="구성 부품 전체 리스트")
     default_component_index: int = Field(description="기본 선택 부품 인덱스 (0부터 시작)")
     
-    # Inspection Metrics
     total_score: int = Field(description="총점 (0~100)")
     grade: str = Field(description="AAA, AA, A, B, C 중 선택")
     score_breakdown: ScoreBreakdown = Field(description="세부 점수")
     checklist: InspectionChecklist = Field(description="6대 검사 스탬프")
     confidence: ConfidenceMetrics = Field(description="신뢰도 히트맵")
     
-    # Protocol & Steps
     primary_category: str = Field(description="배출 카테고리 (예: 플라스틱류 / 일반쓰레기)")
     steps: List[str] = Field(description="실행 수칙")
     warning_notes: Optional[str] = Field(description="주의 경고")
 
 # ==============================================================================
-# 2. EcoLens Intelligence Engine (Single-Pass API)
+# 2. EcoLens Intelligence Engine
 # ==============================================================================
 class EcoLensEngine:
     def __init__(self, groq_api_key: str):
@@ -64,7 +62,7 @@ class EcoLensEngine:
         system_prompt = f"""
         당신은 산업용 자원순환 AI 검수 엔진 'EcoLens Intelligence Engine'입니다.
         단 한 번의 스캔으로 입력된 품목의 복합 구성 요소, 6대 검사 스탬프(PASS/WARNING/FAIL), 세부 점수(100점 만점) 및 신뢰도를 정밀 산출하세요.
-        햇반, 컵라면 같은 제품은 반드시 is_ambiguous=True로 처리하고 용기, 필름, 종이 등 components를 분리하세요.
+        도시락, 햇반, 컵라면 같은 복합 제품은 반드시 is_ambiguous=True로 처리하고 용기, 필름, 뚜껑 등 components를 분리하세요.
         다음 JSON 스키마를 엄격히 준수하여 반환하세요:
         {json.dumps(InspectionReport.model_json_schema(), ensure_ascii=False, indent=2)}
         """
@@ -80,7 +78,6 @@ class EcoLensEngine:
         return InspectionReport.model_validate_json(response.choices[0].message.content)
 
     def ask_intelligence_fallback(self, question: str, report: InspectionReport) -> str:
-        # LLM 호출은 오직 정형 칩으로 해결되지 않는 복잡한 꼬리 질문에만 사용
         prompt = f"""
         [Inspection Report Context]
         - 품목: {report.detected_item}
@@ -99,32 +96,45 @@ class EcoLensEngine:
         return res.choices[0].message.content
 
 # ==============================================================================
-# 3. Streamlit Premium Inspection UI
+# 3. Streamlit Premium Inspection UI & Theme Fixes
 # ==============================================================================
 st.set_page_config(page_title="EcoLens Intelligence Engine", page_icon="🌱", layout="centered")
 
+# CSS: 다크모드/라이트모드 텍스트 가독성 및 HTML 태그 스타일링 보정
 st.markdown("""
 <style>
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+    
     html, body, [data-testid="stAppViewContainer"], .stApp {
-        background-color: #FAFAFA !important; color: #111111 !important; font-family: 'Pretendard', sans-serif !important;
+        background-color: #FAFAFA !important;
+        color: #0F172A !important;
+        font-family: 'Pretendard', sans-serif !important;
     }
     .block-container { padding-top: 2rem !important; max-width: 700px !important; }
     
     /* Engine Header */
     .engine-header {
         display: flex; justify-content: space-between; align-items: center;
-        padding-bottom: 12px; margin-bottom: 24px; border-bottom: 2px solid #111;
+        padding-bottom: 12px; margin-bottom: 20px; border-bottom: 2px solid #0F172A;
     }
-    .engine-title { font-size: 1.2rem; font-weight: 800; letter-spacing: -0.02em; }
+    .engine-title { font-size: 1.2rem; font-weight: 800; color: #0F172A; }
     
-    /* Inspection Sheet Container */
+    /* Inspection Sheet Box */
     .inspection-sheet {
         background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px;
-        padding: 24px; margin-top: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+        padding: 24px; margin-top: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.04);
     }
     
-    /* Badge Stamps */
+    /* Score Grid Fix */
+    .score-grid {
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+        text-align: center; background: #F8FAFC; padding: 12px; border-radius: 10px;
+        font-size: 0.85rem; border: 1px solid #E2E8F0;
+    }
+    .score-grid div span { display: block; color: #64748B; font-size: 0.75rem; margin-bottom: 2px; }
+    .score-grid div b { color: #0F172A; font-size: 0.95rem; }
+
+    /* Stamps */
     .stamp-pass { background: #DCFCE7; color: #166534; font-weight: 800; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; }
     .stamp-warning { background: #FEF9C3; color: #854D0E; font-weight: 800; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; }
     .stamp-fail { background: #FEE2E2; color: #991B1B; font-weight: 800; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; }
@@ -132,24 +142,32 @@ st.markdown("""
     /* Checklist Table */
     .checklist-row {
         display: flex; justify-content: space-between; align-items: center;
-        padding: 8px 0; border-bottom: 1px dashed #E2E8F0; font-size: 0.9rem;
+        padding: 10px 0; border-bottom: 1px dashed #E2E8F0; font-size: 0.9rem; color: #0F172A;
+    }
+
+    /* Radio Button Text Color Fix */
+    div[data-testid="stRadio"] label p {
+        color: #0F172A !important;
+        font-weight: 700 !important;
+        font-size: 0.9rem !important;
     }
     
-    /* Q&A Chips */
-    .chip-btn {
-        display: inline-block; background: #F1F5F9; color: #334155; font-size: 0.82rem; font-weight: 600;
-        padding: 6px 12px; border-radius: 20px; margin-right: 6px; margin-bottom: 8px; cursor: pointer;
+    /* Warning Box Text Color Fix */
+    .stAlert p {
+        color: #78350F !important;
+        font-weight: 600 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
 if not GROQ_API_KEY:
-    st.error("GROQ_API_KEY가 필요합니다.")
+    st.error("GROQ_API_KEY 설정이 필요합니다.")
     st.stop()
 
 engine = EcoLensEngine(groq_api_key=GROQ_API_KEY)
 
+# Header
 st.markdown("""
 <div class="engine-header">
     <div class="engine-title">🌱 EcoLens Intelligence Engine v2.6</div>
@@ -157,8 +175,8 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Input Box
-target_input = st.text_input("검사 대상 입력", placeholder="예: 햇반, 삼다수, 컵라면, 배달용기", key="engine_input_key")
+# Input
+target_input = st.text_input("검사 대상 입력", placeholder="예: 햇반, 도시락, 삼다수, 컵라면", key="engine_input_key")
 location = st.selectbox("배출 규정 지역", ["전국 공통 기준", "서울특별시 강남구", "경기도 수원시"], label_visibility="collapsed")
 
 if st.button("🔬 Execute Inspection Report →", type="primary", use_container_width=True):
@@ -173,7 +191,7 @@ if st.button("🔬 Execute Inspection Report →", type="primary", use_container
                 st.error(f"검사 실패: {e}")
 
 # ==============================================================================
-# DISPLAY INSPECTION REPORT
+# DISPLAY REPORT
 # ==============================================================================
 if "report" in st.session_state and st.session_state.report:
     rep: InspectionReport = st.session_state.report
@@ -181,29 +199,28 @@ if "report" in st.session_state and st.session_state.report:
     st.write("")
     st.subheader("📄 Inspection Report")
     
-    # 1. Component Selector (Single-Pass로 이미 가져온 데이터를 탭으로 바로 렌더링)
+    # Component Radio (라벨 글자색 스타일 패치 적용 완료)
     if rep.is_ambiguous and rep.components:
-        st.caption("💡 복합 구성품 감지됨. 세부 부품을 클릭하여 지침을 확인하세요:")
+        st.caption("💡 복합 구성품 감지됨. 세부 부품을 선택하여 지침을 확인하세요:")
         comp_names = [f"{c.name} ({c.material})" for c in rep.components]
         selected_tab = st.radio("구성 요소:", comp_names, horizontal=True, label_visibility="collapsed")
         st.session_state.selected_comp_idx = comp_names.index(selected_tab)
 
     active_comp = rep.components[st.session_state.selected_comp_idx] if rep.components else None
 
-    # Helper function for stamps
     def get_stamp_html(status: str):
         if status == "PASS": return '<span class="stamp-pass">PASS</span>'
         elif status == "WARNING": return '<span class="stamp-warning">WARNING</span>'
         return '<span class="stamp-fail">FAIL</span>'
 
-    # 2. Main Score & Grade Sheet
+    # Main Score & Grade Sheet (HTML 주석 제거 및 grid 클래스 적용으로 깨짐 해결)
     st.markdown(f"""
     <div class="inspection-sheet">
         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
             <div>
                 <span style="color:#64748B; font-size:0.8rem; font-weight:700;">ITEM INSPECTED</span>
-                <h2 style="margin:2px 0 6px 0; font-size:1.5rem;">{rep.detected_item} {f' - {active_comp.name}' if active_comp else ''}</h2>
-                <span style="font-size:0.85rem; color:#475569;">배출 분류: <b>{rep.primary_category}</b></span>
+                <h2 style="margin:2px 0 6px 0; font-size:1.5rem; color:#0F172A;">{rep.detected_item} {f' - {active_comp.name}' if active_comp else ''}</h2>
+                <span style="font-size:0.85rem; color:#475569;">배출 분류: <b style="color:#0F172A;">{rep.primary_category}</b></span>
             </div>
             <div style="text-align:right;">
                 <div style="font-size:2.2rem; font-weight:900; color:#0F172A; line-height:1;">{rep.total_score}<span style="font-size:1rem; color:#64748B;">/100</span></div>
@@ -211,18 +228,16 @@ if "report" in st.session_state and st.session_state.report:
             </div>
         </div>
         <hr style="border:none; border-top:1px solid #E2E8F0; margin:16px 0;">
-        
-        <!-- Score Breakdown -->
-        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:8px; text-align:center; background:#F8FAFC; padding:12px; border-radius:10px; font-size:0.8rem;">
-            <div><div style="color:#64748B;">재질 평가</div><b>{rep.score_breakdown.material_score}/25</b></div>
-            <div><div style="color:#64748B;">세척 상태</div><b>{rep.score_breakdown.cleaning_score}/20</b></div>
-            <div><div style="color:#64748B;">오염도</div><b>{rep.score_breakdown.contamination_score}/30</b></div>
-            <div><div style="color:#64748B;">규정 적합</div><b>{rep.score_breakdown.policy_score}/25</b></div>
+        <div class="score-grid">
+            <div><span>재질 평가</span><b>{rep.score_breakdown.material_score}/25</b></div>
+            <div><span>세척 상태</span><b>{rep.score_breakdown.cleaning_score}/20</b></div>
+            <div><span>오염도</span><b>{rep.score_breakdown.contamination_score}/30</b></div>
+            <div><span>규정 적합</span><b>{rep.score_breakdown.policy_score}/25</b></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # 3. Automobile-style Inspection Checklist Table
+    # Inspection Checklist Table
     st.write("")
     st.markdown("##### 🚗 6대 정밀 검사 항목 (Inspection Checklist)")
     
@@ -244,7 +259,7 @@ if "report" in st.session_state and st.session_state.report:
         </div>
         """, unsafe_allow_html=True)
 
-    # 4. AI Confidence Heatmap
+    # AI Confidence Heatmap
     st.write("")
     st.markdown("##### 📊 AI Confidence Heatmap")
     c1, c2, c3 = st.columns(3)
@@ -257,7 +272,7 @@ if "report" in st.session_state and st.session_state.report:
     c3.caption(f"위험 감지: {rep.confidence.risk_confidence}%")
     c3.progress(rep.confidence.risk_confidence / 100)
 
-    # 5. Protocol Steps
+    # Steps & Warnings
     st.write("")
     st.markdown("##### 📋 배출 실행 수칙")
     for i, step in enumerate(rep.steps, 1):
@@ -266,9 +281,7 @@ if "report" in st.session_state and st.session_state.report:
     if rep.warning_notes:
         st.warning(f"⚠️ **Inspection Warning:** {rep.warning_notes}")
 
-    # ==============================================================================
-    # 6. ZERO-COST INSTANT Q&A CHIPS (LLM 호출 0회, 속도 0.01초)
-    # ==============================================================================
+    # Zero-Cost Instant Q&A Chips
     st.divider()
     st.markdown("### 💬 Ask Intelligence")
     st.caption("자주 묻는 질문은 AI Engine이 데이터를 즉시 렌더링합니다. (0초 소요, LLM 미사용)")

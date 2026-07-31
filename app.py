@@ -77,119 +77,151 @@ class EcoLensEngine:
         )
         return InspectionReport.model_validate_json(response.choices[0].message.content)
 
-    def ask_intelligence_fallback(self, question: str, report: InspectionReport) -> str:
-        prompt = f"""
-        [Inspection Report Context]
-        - 품목: {report.detected_item}
-        - 등급: {report.grade} ({report.total_score}점)
-        - 주요 수칙: {', '.join(report.steps)}
-        - 경고: {report.warning_notes or '없음'}
-
-        사용자 질문: "{question}"
-        위 Report 데이터에 입각해서만 2문장 이내로 명확히 답하세요. 모순되는 답변은 금지합니다.
-        """
-        res = self.groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0
-        )
-        return res.choices[0].message.content
-
 # ==============================================================================
-# 3. Streamlit Liquid Glass & Report Design Setup
+# 3. Canva-Style Modern Infographic CSS Setup
 # ==============================================================================
-st.set_page_config(page_title="EcoLens Intelligence Report", page_icon="🌱", layout="centered")
+st.set_page_config(page_title="EcoLens Infographic Report", page_icon="🌱", layout="centered")
 
 st.markdown("""
 <style>
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
 
-    @keyframes fadeInUp {
-        from { opacity: 0; transform: translateY(15px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-
     html, body, [data-testid="stAppViewContainer"], .stApp {
-        background: linear-gradient(135deg, #F1F5F9 0%, #E2E8F0 100%) !important;
+        background: #F1F5F9 !important;
         color: #0F172A !important;
         font-family: 'Pretendard', sans-serif !important;
     }
-    .block-container { padding-top: 1.8rem !important; max-width: 760px !important; }
+    .block-container { padding-top: 2rem !important; max-width: 780px !important; }
 
-    /* Glass Engine Header */
-    .engine-header {
-        display: flex; justify-content: space-between; align-items: center;
-        padding: 16px 22px; border-radius: 16px;
-        background: rgba(255, 255, 255, 0.7);
-        backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.9);
-        box-shadow: 0 4px 15px rgba(0,0,0,0.03); margin-bottom: 20px;
-    }
-    .engine-title { font-size: 1.15rem; font-weight: 800; color: #0F172A; }
-
-    /* High-End Official Report Paper Box */
-    .report-paper {
-        background: rgba(255, 255, 255, 0.85);
-        backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-        border-radius: 24px;
-        border: 1px solid rgba(255, 255, 255, 1);
-        padding: 32px;
-        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.06);
-        animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-        margin-top: 15px; position: relative; overflow: hidden;
+    /* Canva Poster Card Shell */
+    .canva-card {
+        background: #FFFFFF;
+        border-radius: 28px;
+        box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.12);
+        overflow: hidden;
+        border: 1px solid #E2E8F0;
+        margin-top: 15px;
     }
 
-    /* Document Watermark Accent */
-    .report-paper::before {
-        content: "ECOLENS CERTIFIED";
-        position: absolute; right: -20px; bottom: 10px;
-        font-size: 3.5rem; font-weight: 900;
-        color: rgba(15, 23, 42, 0.02);
-        letter-spacing: 4px; pointer-events: none; transform: rotate(-5deg);
+    /* Top Canva Header Banner */
+    .canva-banner {
+        background: linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%);
+        padding: 30px 36px;
+        color: #FFFFFF;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        position: relative;
+    }
+    .canva-banner-title {
+        font-size: 0.8rem;
+        font-weight: 800;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        opacity: 0.9;
+    }
+    .canva-banner-item {
+        font-size: 2rem;
+        font-weight: 900;
+        margin: 4px 0 0 0;
+        line-height: 1.1;
     }
 
-    /* Report Meta Header */
-    .report-meta-bar {
-        display: flex; justify-content: space-between; align-items: center;
-        border-bottom: 2px solid #0F172A; padding-bottom: 12px; margin-bottom: 20px;
+    /* Canva Body Container */
+    .canva-body {
+        padding: 32px 36px;
     }
-    .report-doc-id { font-size: 0.75rem; font-family: monospace; color: #64748B; font-weight: 600; }
 
-    /* Score breakdown inner glass grid */
-    .score-grid {
-        display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
-        text-align: center; background: rgba(241, 245, 249, 0.6);
-        backdrop-filter: blur(8px); padding: 12px; border-radius: 12px;
-        border: 1px solid rgba(226, 232, 240, 0.8); margin-top: 16px;
+    /* Score Badge Floating Circle */
+    .score-badge {
+        background: rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(10px);
+        border: 2px solid rgba(255, 255, 255, 0.4);
+        border-radius: 20px;
+        padding: 12px 24px;
+        text-align: center;
     }
-    .score-grid div span { display: block; color: #64748B; font-size: 0.72rem; margin-bottom: 2px; }
-    .score-grid div b { color: #0F172A; font-size: 0.95rem; }
+    .score-num { font-size: 2.6rem; font-weight: 900; line-height: 1; color: #FFFFFF; }
+    .score-grade { font-size: 0.85rem; font-weight: 800; opacity: 0.95; }
+
+    /* Section Grid */
+    .canva-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        margin-top: 20px;
+    }
+
+    /* Inner Cards */
+    .inner-box {
+        background: #F8FAFC;
+        border-radius: 18px;
+        padding: 20px;
+        border: 1px solid #E2E8F0;
+    }
+    .inner-box-title {
+        font-size: 0.85rem;
+        font-weight: 800;
+        color: #64748B;
+        margin-bottom: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    /* Progress & Bar Customization */
+    .metric-row {
+        margin-bottom: 12px;
+    }
+    .metric-label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #334155;
+        margin-bottom: 4px;
+    }
+    .bar-bg {
+        background: #E2E8F0;
+        height: 8px;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    .bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #10B981, #059669);
+        border-radius: 4px;
+    }
 
     /* Stamps */
-    .stamp-pass { background: #DCFCE7; color: #166534; font-weight: 800; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; border: 1px solid #BBF7D0; }
-    .stamp-warning { background: #FEF9C3; color: #854D0E; font-weight: 800; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; border: 1px solid #FEF08A; }
-    .stamp-fail { background: #FEE2E2; color: #991B1B; font-weight: 800; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; border: 1px solid #FCA5A5; }
-
-    /* Checklist Item Box */
-    .checklist-row {
-        display: flex; justify-content: space-between; align-items: center;
-        padding: 10px 12px; margin-bottom: 6px; border-radius: 10px;
-        background: rgba(255, 255, 255, 0.5); border: 1px solid rgba(226, 232, 240, 0.8);
-        font-size: 0.88rem; color: #0F172A; font-weight: 500;
-        transition: all 0.2s ease;
+    .c-stamp {
+        padding: 4px 10px;
+        border-radius: 8px;
+        font-size: 0.72rem;
+        font-weight: 800;
+        display: inline-block;
     }
-    .checklist-row:hover { background: rgba(255, 255, 255, 0.9); transform: translateX(3px); }
+    .c-pass { background: #DCFCE7; color: #15803D; }
+    .c-warn { background: #FEF9C3; color: #A16207; }
+    .c-fail { background: #FEE2E2; color: #B91C1C; }
 
-    /* Streamlit Radio Override */
+    /* Checklist Canva List */
+    .c-check-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px dashed #CBD5E1;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #1E293B;
+    }
+    .c-check-item:last-child { border-bottom: none; }
+
+    /* Radio UI Customization */
     div[data-testid="stRadio"] label p {
-        color: #0F172A !important; font-weight: 700 !important; font-size: 0.88rem !important;
-    }
-
-    /* Print Optimization CSS */
-    @media print {
-        .block-container { max-width: 100% !important; padding: 0 !important; }
-        .stButton, .stSelectbox, .stTextInput, .engine-header, [data-testid="stSidebar"] { display: none !important; }
-        .report-paper { box-shadow: none !important; border: 1px solid #000 !important; background: #FFF !important; }
+        color: #0F172A !important;
+        font-weight: 700 !important;
+        font-size: 0.88rem !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -201,203 +233,124 @@ if not GROQ_API_KEY:
 
 engine = EcoLensEngine(groq_api_key=GROQ_API_KEY)
 
-# Header
-st.markdown("""
-<div class="engine-header">
-    <div class="engine-title">🌱 EcoLens Intelligence Engine</div>
-    <span class="stamp-pass">ENTERPRISE REPORT GEN</span>
-</div>
-""", unsafe_allow_html=True)
+# Top Bar
+st.title("🌱 EcoLens Infographic Generator")
 
-# Input
-target_input = st.text_input("검사 대상 입력", placeholder="예: 햇반, 도시락, 삼다수, 컵라면", key="engine_input_key")
+# Inputs
+target_input = st.text_input("검사 대상 입력", placeholder="예: 도시락, 햇반, 삼다수, 컵라면", key="canva_input")
 location = st.selectbox("배출 규정 지역", ["전국 공통 기준", "서울특별시 강남구", "경기도 수원시"], label_visibility="collapsed")
 
-if st.button("🔬 Execute Official Report →", type="primary", use_container_width=True):
+if st.button("✨ 캔바 스타일 보고서 생성하기", type="primary", use_container_width=True):
     if target_input:
-        with st.spinner("정밀 분석 보고서 생성 중..."):
+        with st.spinner("디자인 보고서 카드 제작 중..."):
             try:
                 report = engine.run_single_pass_inspection(target_input, location)
                 st.session_state.report = report
                 st.session_state.selected_comp_idx = report.default_component_index
-                st.session_state.doc_id = f"ECL-{uuid.uuid4().hex[:8].upper()}"
-                st.session_state.created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                st.session_state.active_chip_answer = None
+                st.session_state.doc_id = f"CANVA-{uuid.uuid4().hex[:6].upper()}"
+                st.session_state.created_at = datetime.now().strftime("%Y.%m.%d")
             except Exception as e:
-                st.error(f"보고서 생성 실패: {e}")
+                st.error(f"생성 실패: {e}")
 
 # ==============================================================================
-# DISPLAY REPORT (Professional Sheet Format)
+# CANVA INFOGRAPHIC CARD RENDER
 # ==============================================================================
 if "report" in st.session_state and st.session_state.report:
     rep: InspectionReport = st.session_state.report
-    doc_id = st.session_state.get("doc_id", "ECL-TEST-0001")
-    created_at = st.session_state.get("created_at", "2026-04-04 12:00:00")
-    
-    st.write("")
-    
-    # Sub-component Tab Selector
+    doc_id = st.session_state.get("doc_id", "CANVA-001")
+    created_at = st.session_state.get("created_at", "2026.04.04")
+
+    # Sub-component Switcher
     if rep.is_ambiguous and rep.components:
-        st.caption("💡 복합 구성 품목이 감지되었습니다. 세부 부품 선택:")
+        st.write("")
+        st.caption("💡 구성품 선택:")
         comp_names = [f"{c.name} ({c.material})" for c in rep.components]
         selected_tab = st.radio("구성 요소:", comp_names, horizontal=True, label_visibility="collapsed")
         st.session_state.selected_comp_idx = comp_names.index(selected_tab)
 
     active_comp = rep.components[st.session_state.selected_comp_idx] if rep.components else None
 
-    def get_stamp_html(status: str):
-        if status == "PASS": return '<span class="stamp-pass">PASS</span>'
-        elif status == "WARNING": return '<span class="stamp-warning">WARNING</span>'
-        return '<span class="stamp-fail">FAIL</span>'
+    def get_c_stamp(status: str):
+        if status == "PASS": return '<span class="c-stamp c-pass">PASS</span>'
+        elif status == "WARNING": return '<span class="c-stamp c-warn">WARNING</span>'
+        return '<span class="c-stamp c-fail">FAIL</span>'
 
-    # Official Report Paper Layout
-    report_html = f"""
-    <div class="report-paper">
-        <!-- Top Official Meta Header -->
-        <div class="report-meta-bar">
+    sb = rep.score_breakdown
+    chk = rep.checklist
+
+    # Canva Infographic HTML Output
+    canva_html = f"""
+    <div class="canva-card">
+        <!-- Banner Header -->
+        <div class="canva-banner">
             <div>
-                <span style="font-size:0.75rem; font-weight:800; color:#059669; letter-spacing:1px;">OFFICIAL REPORT</span>
-                <h3 style="margin:0; font-size:1.1rem; color:#0F172A;">자원순환 정밀 진단 보고서</h3>
+                <div class="canva-banner-title">ECOLENS RECYCLING REPORT • {doc_id}</div>
+                <div class="canva-banner-item">{rep.detected_item}</div>
+                <div style="font-size:0.9rem; opacity:0.9; margin-top:4px;">
+                    분류: <b>{rep.primary_category}</b> {f'| 세부: {active_comp.name}' if active_comp else ''}
+                </div>
             </div>
-            <div style="text-align:right;">
-                <div class="report-doc-id">DOC: {doc_id}</div>
-                <div style="font-size:0.75rem; color:#64748B;">{created_at}</div>
+            <div class="score-badge">
+                <div class="score-num">{rep.total_score}</div>
+                <div class="score-grade">GRADE {rep.grade}</div>
             </div>
         </div>
 
-        <!-- Main Info Grid -->
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
-            <div>
-                <span style="color:#64748B; font-size:0.78rem; font-weight:700;">INSPECTED TARGET</span>
-                <h2 style="margin:2px 0 6px 0; font-size:1.6rem; color:#0F172A; font-weight:800;">
-                    {rep.detected_item} {f' <span style="font-size:1.1rem; color:#475569;">({active_comp.name})</span>' if active_comp else ''}
-                </h2>
-                <span style="font-size:0.88rem; color:#334155;">권장 배출 분류: <b style="color:#0F172A;">{rep.primary_category}</b></span>
+        <!-- Body Grid -->
+        <div class="canva-body">
+            <div style="display:flex; justify-content:space-between; color:#64748B; font-size:0.75rem; font-weight:700; margin-bottom:12px;">
+                <span>ISSUED BY ECOLENS AI</span>
+                <span>DATE: {created_at}</span>
             </div>
-            <div style="text-align:right; background:rgba(255,255,255,0.7); padding:10px 16px; border-radius:14px; border:1px solid #E2E8F0;">
-                <div style="font-size:2.4rem; font-weight:900; color:#0F172A; line-height:1;">{rep.total_score}<span style="font-size:1rem; color:#64748B;">/100</span></div>
-                <div style="font-weight:800; color:#166534; font-size:0.9rem; margin-top:3px;">Grade {rep.grade}</div>
-            </div>
-        </div>
 
-        <!-- Score Grid Breakdown -->
-        <div class="score-grid">
-            <div><span>재질 평가</span><b>{rep.score_breakdown.material_score} / 25</b></div>
-            <div><span>세척 상태</span><b>{rep.score_breakdown.cleaning_score} / 20</b></div>
-            <div><span>오염도 점수</span><b>{rep.score_breakdown.contamination_score} / 30</b></div>
-            <div><span>규정 적합성</span><b>{rep.score_breakdown.policy_score} / 25</b></div>
+            <div class="canva-grid">
+                <!-- Left Box: Score Bars -->
+                <div class="inner-box">
+                    <div class="inner-box-title">📊 세부 진단 점수</div>
+                    
+                    <div class="metric-row">
+                        <div class="metric-label"><span>재질 평가</span><span>{sb.material_score} / 25</span></div>
+                        <div class="bar-bg"><div class="bar-fill" style="width:{(sb.material_score/25)*100}%;"></div></div>
+                    </div>
+                    <div class="metric-row">
+                        <div class="metric-label"><span>세척 상태</span><span>{sb.cleaning_score} / 20</span></div>
+                        <div class="bar-bg"><div class="bar-fill" style="width:{(sb.cleaning_score/20)*100}%;"></div></div>
+                    </div>
+                    <div class="metric-row">
+                        <div class="metric-label"><span>오염도 점수</span><span>{sb.contamination_score} / 30</span></div>
+                        <div class="bar-bg"><div class="bar-fill" style="width:{(sb.contamination_score/30)*100}%;"></div></div>
+                    </div>
+                    <div class="metric-row">
+                        <div class="metric-label"><span>규정 적합성</span><span>{sb.policy_score} / 25</span></div>
+                        <div class="bar-bg"><div class="bar-fill" style="width:{(sb.policy_score/25)*100}%;"></div></div>
+                    </div>
+                </div>
+
+                <!-- Right Box: Inspection Checklist -->
+                <div class="inner-box">
+                    <div class="inner-box-title">🔍 6대 정밀 검사 스탬프</div>
+                    <div class="c-check-item"><span>객체 인식</span>{get_c_stamp(chk.object_detection)}</div>
+                    <div class="c-check-item"><span>재질 분석</span>{get_c_stamp(chk.material_analysis)}</div>
+                    <div class="c-check-item"><span>잔여물 검수</span>{get_c_stamp(chk.residue_detection)}</div>
+                    <div class="c-check-item"><span>라벨 분리</span>{get_c_stamp(chk.label_detection)}</div>
+                    <div class="c-check-item"><span>뚜껑/이물질</span>{get_c_stamp(chk.cap_detection)}</div>
+                    <div class="c-check-item"><span>지자체 규정</span>{get_c_stamp(chk.local_policy)}</div>
+                </div>
+            </div>
+
+            <!-- Steps Footer Card -->
+            <div class="inner-box" style="margin-top:20px; background:#F1F5F9;">
+                <div class="inner-box-title">📋 올바른 분리배출 가이드</div>
+                <div style="font-size:0.85rem; color:#334155; line-height:1.6;">
+                    {'<br>'.join([f"<b>{i+1}.</b> {step}" for i, step in enumerate(rep.steps)])}
+                </div>
+                {f'<div style="margin-top:10px; color:#991B1B; font-size:0.8rem; font-weight:700;">⚠️ {rep.warning_notes}</div>' if rep.warning_notes else ''}
+            </div>
         </div>
     </div>
     """
-    st.markdown(report_html, unsafe_allow_html=True)
 
-    # Detailed Checklist Section
-    st.write("")
-    st.markdown("##### 🔍 6대 정밀 검사 항목 (Inspection Checklist)")
-    
-    chk = rep.checklist
-    items_map = [
-        ("Object Detection (객체 인식)", chk.object_detection),
-        ("Material Analysis (재질 정밀 감지)", chk.material_analysis),
-        ("Residue Detection (음식물/잔여물 검수)", chk.residue_detection),
-        ("Label Detection (라벨/필름 분리 검수)", chk.label_detection),
-        ("Cap Detection (뚜껑/이물질 검수)", chk.cap_detection),
-        ("Local Policy (지자체 규정 적합성)", chk.local_policy),
-    ]
-
-    for label, status in items_map:
-        st.markdown(f"""
-        <div class="checklist-row">
-            <span>{label}</span>
-            <div>{get_stamp_html(status)}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # Confidence Progress
-    st.write("")
-    st.markdown("##### 📊 AI Confidence Metrics")
-    col1, col2, col3 = st.columns(3)
-    col1.caption(f"재질 인식: {rep.confidence.material_confidence}%")
-    col1.progress(rep.confidence.material_confidence / 100)
-    
-    col2.caption(f"분류 정확도: {rep.confidence.category_confidence}%")
-    col2.progress(rep.confidence.category_confidence / 100)
-    
-    col3.caption(f"위험 감지: {rep.confidence.risk_confidence}%")
-    col3.progress(rep.confidence.risk_confidence / 100)
-
-    # Action Steps & Alert Box
-    st.write("")
-    st.markdown("##### 📋 올바른 배출 실행 지침")
-    for i, step in enumerate(rep.steps, 1):
-        st.markdown(f"**{i}.** {step}")
-
-    if rep.warning_notes:
-        st.warning(f"⚠️ **Inspection Warning:** {rep.warning_notes}")
-
-    # Export & Download Option
-    st.divider()
-    download_html = f"""
-    <html>
-        <head>
-            <meta charset="utf-8">
-            <title>{rep.detected_item} - EcoLens Report</title>
-            <style>
-                body {{ font-family: sans-serif; padding: 40px; background: #F8FAFC; color: #0F172A; }}
-                .box {{ background: #FFF; padding: 30px; border-radius: 16px; border: 1px solid #CBD5E1; max-width: 650px; margin: 0 auto; }}
-                .title {{ font-size: 24px; font-weight: bold; margin-bottom: 8px; }}
-                .score {{ font-size: 32px; font-weight: bold; color: #059669; }}
-                .badge {{ background: #E2E8F0; padding: 4px 8px; border-radius: 4px; font-size: 12px; }}
-            </style>
-        </head>
-        <body>
-            <div class="box">
-                <div style="font-size:12px; color:#64748B;">EcoLens Inspection Report | Doc ID: {doc_id}</div>
-                <div class="title">{rep.detected_item} 진단 리포트</div>
-                <div>배출 분류: <b>{rep.primary_category}</b></div>
-                <hr style="margin:20px 0; border:none; border-top:1px solid #E2E8F0;">
-                <div>총점: <span class="score">{rep.total_score}점</span> (Grade {rep.grade})</div>
-                <h4>배출 수칙</h4>
-                <ol>
-                    {''.join([f'<li>{s}</li>' for s in rep.steps])}
-                </ol>
-            </div>
-        </body>
-    </html>
-    """
-
-    col_dl1, col_dl2 = st.columns([2, 1])
-    col_dl1.caption("📄 보고서를 파일로 소장하거나 브라우저(Ctrl+P)로 인쇄할 수 있습니다.")
-    col_dl2.download_button(
-        label="📥 HTML 보고서 저장",
-        data=download_html,
-        file_name=f"EcoLens_Report_{doc_id}.html",
-        mime="text/html",
-        use_container_width=True
-    )
-
-    # Q&A Interactive Section
-    st.divider()
-    st.markdown("### 💬 Ask Intelligence Engine")
-    
-    col_a, col_b, col_c, col_d = st.columns(4)
-    if col_a.button("🧼 세척 방법?", use_container_width=True):
-        st.session_state.active_chip_answer = f"**세척 지침:** {rep.steps[0] if rep.steps else '물로 내용물을 깨끗이 헹군 후 배출하세요.'}"
-    if col_b.button("🏷️ 라벨/필름?", use_container_width=True):
-        st.session_state.active_chip_answer = f"**라벨 검수 상태 ({chk.label_detection}):** 비닐 라벨은 분리하여 별도 배출하세요."
-    if col_c.button("❌ 일반쓰레기?", use_container_width=True):
-        st.session_state.active_chip_answer = f"**분류 안내:** 본 품목은 `{rep.primary_category}` 대상입니다."
-    if col_d.button("⚠️ 거부 원인?", use_container_width=True):
-        st.session_state.active_chip_answer = f"**수거 위험 요소:** {rep.warning_notes or '특이 위험 사항 없음'}"
-
-    if st.session_state.get("active_chip_answer"):
-        st.info(st.session_state.active_chip_answer)
-
-    custom_q = st.text_input("보고서 기반 추가 질문", placeholder="추가로 궁금한 점을 질문하세요...", label_visibility="collapsed")
-    if custom_q:
-        with st.spinner("답변 작성 중..."):
-            ans = engine.ask_intelligence_fallback(custom_q, rep)
-            st.success(f"🤖 **Engine Answer:** {ans}")
+    st.markdown(canva_html, unsafe_allow_html=True)
 
 st.divider()
-st.caption("EcoLens Intelligence Engine © 2026 — Enterprise Sustainability Protocol")
+st.caption("EcoLens Infographic Generator © 2026")
